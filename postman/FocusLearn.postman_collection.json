@@ -1,0 +1,39 @@
+{
+  "info": {
+    "name": "FocusLearn API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {"name": "Register", "request": {"method": "POST", "url": "{{baseUrl}}/api/auth/register"}},
+        {"name": "Login", "request": {"method": "POST", "url": "{{baseUrl}}/api/auth/login"}},
+        {"name": "Admin Login", "request": {"method": "POST", "url": "{{baseUrl}}/api/auth/admin/login"}},
+        {"name": "Current User", "request": {"method": "GET", "url": "{{baseUrl}}/api/auth/me"}}
+      ]
+    },
+    {
+      "name": "Modules",
+      "item": [
+        {"name": "Get Modules", "request": {"method": "GET", "url": "{{baseUrl}}/api/modules"}},
+        {"name": "Create Module", "request": {"method": "POST", "url": "{{baseUrl}}/api/modules"}}
+      ]
+    },
+    {
+      "name": "Quiz",
+      "item": [
+        {"name": "Get Questions", "request": {"method": "GET", "url": "{{baseUrl}}/api/quiz/:moduleId"}},
+        {"name": "Submit Quiz", "request": {"method": "POST", "url": "{{baseUrl}}/api/quiz/submit"}}
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {"name": "Dashboard", "request": {"method": "GET", "url": "{{baseUrl}}/api/admin/dashboard"}},
+        {"name": "Export CSV", "request": {"method": "GET", "url": "{{baseUrl}}/api/admin/export"}}
+      ]
+    }
+  ],
+  "variable": [{"key": "baseUrl", "value": "http://localhost:5000"}]
+}
