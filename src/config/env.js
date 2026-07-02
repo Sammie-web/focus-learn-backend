@@ -14,6 +14,7 @@ const env = {
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:5173,http://localhost:5176',
   rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
   rateLimitMaxRequests: Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  adminSecret: process.env.ADMIN_SECRET || 'admin-secret-key',
 };
 
 export default env;

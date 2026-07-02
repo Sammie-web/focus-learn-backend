@@ -10,6 +10,16 @@ export const register = async (req, res, next) => {
   }
 };
 
+export const adminRegister = async (req, res, next) => {
+  try {
+    const { adminSecret, ...userData } = req.body;
+    const result = await authService.adminRegister(userData, adminSecret);
+    return sendSuccess(res, 'Admin registration successful', result, 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const login = async (req, res, next) => {
   try {
     const result = await authService.loginUser(req.body);

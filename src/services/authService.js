@@ -22,6 +22,26 @@ class AuthService {
     return this.issueTokens(user);
   }
 
+  async adminRegister(payload, adminSecret) {
+    if (adminSecret !== env.adminSecret) {
+      throw Object.assign(new Error('Invalid admin secret'), { statusCode: 403 });
+    }
+
+    const existingUser = await userRepository.findByEmail(payload.email);
+    if (existingUser) {
+      throw Object.assign(new Error('Email is already registered'), { statusCode: 409 });
+    }
+
+    const user = await userRepository.create({
+      ...payload,
+      role: USER_ROLES.ADMIN,
+      status: 'active',
+      group: null,
+    });
+
+    return this.issueTokens(user);
+  }
+
   async loginUser(credentials) {
     const user = await userRepository.findByEmail(credentials.email);
     if (!user) {
