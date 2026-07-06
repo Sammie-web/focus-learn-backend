@@ -1,5 +1,6 @@
 import moduleRepository from '../repositories/moduleRepository.js';
 import { sendError, sendSuccess } from '../utils/responseFormatter.js';
+import { buildModulePayload } from '../utils/adminPayloads.js';
 
 export const getAllModules = async (req, res, next) => {
   try {
@@ -24,7 +25,14 @@ export const getModuleById = async (req, res, next) => {
 
 export const createModule = async (req, res, next) => {
   try {
-    const module = await moduleRepository.create({ ...req.body, createdBy: req.user._id });
+    const payload = buildModulePayload({
+      title: req.body.title,
+      description: req.body.description,
+      status: req.body.status,
+      sectionInputs: req.body.sections || req.body.sectionInputs || [],
+    });
+
+    const module = await moduleRepository.create({ ...payload, createdBy: req.user._id });
     return sendSuccess(res, 'Module created', module, 201);
   } catch (error) {
     next(error);
