@@ -41,7 +41,14 @@ export const createModule = async (req, res, next) => {
 
 export const updateModule = async (req, res, next) => {
   try {
-    const module = await moduleRepository.updateById(req.params.id, req.body);
+    const payload = buildModulePayload({
+      title: req.body.title,
+      description: req.body.description,
+      status: req.body.status,
+      sectionInputs: req.body.sections || req.body.sectionInputs || [],
+    });
+
+    const module = await moduleRepository.updateById(req.params.id, payload);
     if (!module) {
       return sendError(res, 'Module not found', [], 404);
     }
