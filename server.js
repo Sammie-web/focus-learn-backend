@@ -13,7 +13,8 @@ const ensureDatabaseConnection = async () => {
 
 const startServer = async () => {
   await ensureDatabaseConnection();
-  app.listen(env.port, () => {
+  app.listen(env.port, 'localhost', () => {
+  // app.listen(env.port, 'localhost', () => {
     console.log(`FocusLearn API listening on port ${env.port}`);
   });
 };

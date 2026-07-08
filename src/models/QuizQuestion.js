@@ -4,6 +4,7 @@ import { TEST_TYPES } from '../config/constants.js';
 const quizQuestionSchema = new mongoose.Schema(
   {
     moduleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Module', required: true },
+    quizType: { type: String, required: true, trim: true, lowercase: true },
     questionNumber: { type: Number, required: true },
     questionText: { type: String, required: true },
     options: [{ type: String, required: true }],

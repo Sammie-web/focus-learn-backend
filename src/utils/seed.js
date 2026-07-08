@@ -73,6 +73,7 @@ const seed = async () => {
 
   const questions = Array.from({ length: 10 }, (_, index) => ({
     moduleId: module._id,
+    quizType: 'immediate',
     questionNumber: index + 1,
     questionText: `Biology question ${index + 1}`,
     options: ['Option A', 'Option B', 'Option C', 'Option D'],

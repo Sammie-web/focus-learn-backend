@@ -4,14 +4,21 @@ import { TEST_TYPES } from '../config/constants.js';
 import { isDelayedWindowOpen } from '../utils/dateHelpers.js';
 
 class QuizService {
-  async getQuestions(moduleId) {
+  async getQuestions(moduleId, quizType, includeAnswers = false) {
     const module = await moduleRepository.findById(moduleId);
     if (!module) {
       throw Object.assign(new Error('Module not found'), { statusCode: 404 });
     }
 
-    const questions = await quizRepository.findQuestionsByModuleId(moduleId);
-    return questions.map(({ correctAnswerIndex, ...question }) => question);
+    const questions = quizType
+      ? await quizRepository.findQuestionsByModuleIdAndType(moduleId, quizType)
+      : await quizRepository.findQuestionsByModuleId(moduleId);
+
+    if (includeAnswers) {
+      return questions;
+    }
+
+    return questions.map(({ correctAnswerIndex, explanation, ...question }) => question);
   }
 
   async submitQuiz(payload, userId) {
