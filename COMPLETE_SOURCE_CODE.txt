@@ -1,0 +1,1949 @@
+================================================================================
+                    FOCUSLEARN BACKEND - COMPLETE SOURCE CODE
+        Production-Ready E-Learning Research Platform with Advanced Analytics
+================================================================================
+
+PROJECT METADATA
+================================================================================
+Name:           FocusLearn Backend
+Version:        1.0.0
+Type:           Node.js/Express/MongoDB Application
+Environment:    Production-Ready
+Purpose:        Backend API for e-learning platform with research analytics
+
+
+================================================================================
+SECTION 1: PROJECT STRUCTURE & OVERVIEW
+================================================================================
+
+1.1 PROJECT HIERARCHY
+================================================================================
+focuslearn-backend/
+├── api/                          # Vercel serverless functions
+│   └── index.js
+├── docs/                         # Documentation
+│   └── browser-testing-checklist.md
+├── postman/                      # API testing collection
+│   └── FocusLearn.postman_collection.json
+├── src/                          # Main source code
+│   ├── config/                   # Configuration files
+│   │   ├── constants.js          # Application constants
+│   │   ├── db.js                 # Database connection
+│   │   └── env.js                # Environment variables
+│   ├── controllers/              # Request handlers
+│   ├── middlewares/              # Express middlewares
+│   ├── models/                   # MongoDB schemas
+│   ├── repositories/             # Data access layer
+│   ├── routes/                   # API routes
+│   ├── services/                 # Business logic
+│   ├── utils/                    # Utility functions
+│   └── validators/               # Request validation
+├── server.js                     # Application entry point
+├── app.js                        # Express app configuration
+├── package.json                  # Dependencies
+└── README.md                     # Project documentation
+
+
+1.2 PROJECT DEPENDENCIES
+================================================================================
+Core Framework:
+- express: ^4.21.1              # Web framework
+- mongoose: ^8.10.0             # MongoDB ODM
+
+Security & Authentication:
+- bcryptjs: ^2.1.0              # Password hashing
+- jsonwebtoken: ^9.0.1          # JWT token generation
+- helmet: ^8.0.0                # Security headers
+- express-mongo-sanitize: ^2.0.0 # MongoDB injection prevention
+- xss-clean: ^0.1.1             # XSS attack prevention
+
+Middleware & Utilities:
+- cors: ^2.8.0                  # Cross-origin resource sharing
+- compression: ^1.7.0           # Response compression
+- cookie-parser: ^1.4.6         # Cookie parsing
+- morgan: ^1.10.0               # HTTP request logging
+- express-validator: ^7.0.0     # Request validation
+- express-rate-limit: ^7.1.0    # Rate limiting
+- dotenv: ^16.4.0               # Environment variable management
+- uuid: ^11.0.0                 # UUID generation
+
+Development:
+- nodemon: ^3.1.0               # Development auto-reload
+
+
+1.3 ENVIRONMENT SETUP
+================================================================================
+NODE_ENV              = development | production
+PORT                  = 5000 (default)
+MONGO_URI             = mongodb://... (required)
+DB_NAME               = focuslearn (default)
+JWT_SECRET            = focuslearn-secret (default)
+JWT_REFRESH_SECRET    = focuslearn-refresh-secret (default)
+JWT_EXPIRES_IN        = 7d (default)
+JWT_REFRESH_EXPIRES_IN = 30d (default)
+CORS_ORIGIN           = http://localhost:3000,http://localhost:5173 (default)
+RATE_LIMIT_WINDOW_MS  = 900000 (15 minutes default)
+RATE_LIMIT_MAX_REQUESTS = 100 (default)
+ADMIN_SECRET          = admin-secret-key (default)
+
+
+================================================================================
+SECTION 2: CONFIGURATION & CONSTANTS
+================================================================================
+
+2.1 ENVIRONMENT CONFIGURATION - src/config/env.js
+================================================================================
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const env = {
+  nodeEnv: process.env.NODE_ENV || 'development',
+  port: Number(process.env.PORT) || 5000,
+  mongoUri: process.env.MONGO_URI || '',
+  dbName: process.env.DB_NAME || 'focuslearn',
+  jwtSecret: process.env.JWT_SECRET || 'focuslearn-secret',
+  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'focuslearn-refresh-secret',
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
+  corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:5173,http://localhost:5176',
+  rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+  rateLimitMaxRequests: Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  adminSecret: process.env.ADMIN_SECRET || 'admin-secret-key',
+};
+
+export default env;
+
+
+2.2 APPLICATION CONSTANTS - src/config/constants.js
+================================================================================
+export const USER_ROLES = {
+  STUDENT: 'student',
+  ADMIN: 'admin',
+};
+
+export const USER_GROUPS = {
+  CONTROL: 'control',
+  EXPERIMENTAL: 'experimental',
+};
+
+export const USER_STATUSES = {
+  ACTIVE: 'active',
+  INACTIVE: 'inactive',
+};
+
+export const TEST_TYPES = {
+  IMMEDIATE: 'immediate',
+  DELAYED: 'delayed',
+};
+
+
+2.3 DATABASE CONNECTION - src/config/db.js
+================================================================================
+import mongoose from 'mongoose';
+import env from './env.js';
+
+export const connectDatabase = async () => {
+  if (mongoose.connection.readyState >= 1) {
+    return;
+  }
+
+  if (!env.mongoUri) {
+    throw new Error('MONGO_URI is required to connect to MongoDB');
+  }
+
+  await mongoose.connect(env.mongoUri, {
+    dbName: env.dbName,
+  });
+};
+
+export const disconnectDatabase = async () => {
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.disconnect();
+  }
+};
+
+
+================================================================================
+SECTION 3: DATABASE MODELS (PROCEDURES)
+================================================================================
+
+3.1 USER MODEL - src/models/User.js
+================================================================================
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
+import { USER_ROLES, USER_GROUPS, USER_STATUSES } from '../config/constants.js';
+
+const userSchema = new mongoose.Schema(
+  {
+    fullName: { type: String, required: true, trim: true },
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    password: { type: String, required: true, minlength: 6 },
+    age: { type: Number, min: 16 },
+    gender: { type: String },
+    deviceType: { type: String },
+    role: { type: String, enum: Object.values(USER_ROLES), default: USER_ROLES.STUDENT },
+    group: { type: String, enum: [USER_GROUPS.CONTROL, USER_GROUPS.EXPERIMENTAL, null], default: null },
+    status: { type: String, enum: Object.values(USER_STATUSES), default: USER_STATUSES.ACTIVE },
+    refreshToken: { type: String },
+  },
+  { timestamps: true }
+);
+
+// PROCEDURE: Password Hashing Before Save
+userSchema.pre('save', async function (next) {
+  if (!this.isModified('password')) return next();
+  this.password = await bcrypt.hash(this.password, 12);
+  next();
+});
+
+// PROCEDURE: Compare Password Method
+userSchema.methods.comparePassword = async function (candidatePassword) {
+  return bcrypt.compare(candidatePassword, this.password);
+};
+
+// PROCEDURE: Hide Sensitive Fields in JSON Output
+userSchema.methods.toJSON = function () {
+  const obj = this.toObject();
+  delete obj.password;
+  delete obj.refreshToken;
+  return obj;
+};
+
+const User = mongoose.model('User', userSchema);
+export default User;
+
+
+3.2 MODULE MODEL - src/models/Module.js
+================================================================================
+import mongoose from 'mongoose';
+
+const sectionSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true, trim: true },
+    content: { type: String, required: true },
+  },
+  { _id: false }
+);
+
+const moduleSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true, trim: true },
+    description: { type: String, required: true },
+    sections: [sectionSchema],
+    isActive: { type: Boolean, default: true },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  },
+  { timestamps: true }
+);
+
+const Module = mongoose.model('Module', moduleSchema);
+export default Module;
+
+
+3.3 QUIZ QUESTION MODEL - src/models/QuizQuestion.js
+================================================================================
+import mongoose from 'mongoose';
+import { TEST_TYPES } from '../config/constants.js';
+
+const quizQuestionSchema = new mongoose.Schema(
+  {
+    moduleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Module', required: true },
+    quizType: { type: String, required: true, trim: true, lowercase: true },
+    questionNumber: { type: Number, required: true },
+    questionText: { type: String, required: true },
+    options: [{ type: String, required: true }],
+    correctAnswerIndex: { type: Number, required: true },
+    explanation: { type: String },
+  },
+  { timestamps: true }
+);
+
+const QuizQuestion = mongoose.model('QuizQuestion', quizQuestionSchema);
+export default QuizQuestion;
+
+
+3.4 RESULT MODEL - src/models/Result.js
+================================================================================
+import mongoose from 'mongoose';
+import { TEST_TYPES } from '../config/constants.js';
+
+const resultSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    moduleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Module', required: true },
+    testType: { type: String, enum: Object.values(TEST_TYPES), required: true },
+    score: { type: Number, required: true },
+    percentage: { type: Number, required: true },
+    answersSubmitted: [{ type: Object }],
+    timeSpent: { type: Number, default: 0 },
+    completedAt: { type: Date, default: Date.now },
+    groupAssignment: { type: String },
+  },
+  { timestamps: true }
+);
+
+const Result = mongoose.model('Result', resultSchema);
+export default Result;
+
+
+3.5 SESSION LOG MODEL - src/models/SessionLog.js
+================================================================================
+import mongoose from 'mongoose';
+
+const sessionLogSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    moduleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Module' },
+    sessionId: { type: String, required: true },
+    eventType: { type: String, required: true },
+    eventDetail: { type: String },
+    pageURL: { type: String },
+    timestamp: { type: Date, default: Date.now },
+    duration: { type: Number, default: 0 },
+  },
+  { timestamps: true }
+);
+
+const SessionLog = mongoose.model('SessionLog', sessionLogSchema);
+export default SessionLog;
+
+
+3.6 NASA-TLX SURVEY MODEL - src/models/NasaTlx.js
+================================================================================
+import mongoose from 'mongoose';
+
+const nasaTlxSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    moduleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Module', required: true },
+    mentalDemand: { type: Number, required: true },
+    physicalDemand: { type: Number, required: true },
+    temporalDemand: { type: Number, required: true },
+    performance: { type: Number, required: true },
+    effort: { type: Number, required: true },
+    frustration: { type: Number, required: true },
+    compositeScore: { type: Number, required: true },
+    submittedAt: { type: Date, default: Date.now },
+    groupAssignment: { type: String },
+  },
+  { timestamps: true }
+);
+
+const NasaTlx = mongoose.model('NasaTlx', nasaTlxSchema);
+export default NasaTlx;
+
+
+================================================================================
+SECTION 4: DATA ACCESS LAYER - REPOSITORIES
+================================================================================
+
+4.1 USER REPOSITORY - src/repositories/userRepository.js
+================================================================================
+import User from '../models/User.js';
+
+class UserRepository {
+  // PROCEDURE: Find user by email
+  async findByEmail(email) {
+    return User.findOne({ email }).lean();
+  }
+
+  // PROCEDURE: Find user by ID
+  async findById(id) {
+    return User.findById(id).lean();
+  }
+
+  // PROCEDURE: Create new user
+  async create(data) {
+    const user = await User.create(data);
+    return user.toObject();
+  }
+
+  // PROCEDURE: Update user by ID
+  async updateById(id, data) {
+    return User.findByIdAndUpdate(id, data, { new: true }).lean();
+  }
+
+  // PROCEDURE: List users with filters
+  async list({ role, group, status } = {}) {
+    const filter = {};
+    if (role) filter.role = role;
+    if (group) filter.group = group;
+    if (status) filter.status = status;
+    return User.find(filter).sort({ createdAt: -1 }).lean();
+  }
+}
+
+export default new UserRepository();
+
+
+4.2 QUIZ REPOSITORY - src/repositories/quizRepository.js
+================================================================================
+import QuizQuestion from '../models/QuizQuestion.js';
+import Result from '../models/Result.js';
+import NasaTlx from '../models/NasaTlx.js';
+
+class QuizRepository {
+  // PROCEDURE: Find all questions for a module
+  async findQuestionsByModuleId(moduleId) {
+    return QuizQuestion.find({ moduleId }).sort({ questionNumber: 1 }).lean();
+  }
+
+  // PROCEDURE: Find questions by module and quiz type
+  async findQuestionsByModuleIdAndType(moduleId, quizType) {
+    return QuizQuestion.find({ moduleId, quizType }).sort({ questionNumber: 1 }).lean();
+  }
+
+  // PROCEDURE: Delete all questions for a module
+  async deleteQuestionsByModuleId(moduleId) {
+    return QuizQuestion.deleteMany({ moduleId });
+  }
+
+  // PROCEDURE: Delete questions by module and type
+  async deleteQuestionsByModuleIdAndType(moduleId, quizType) {
+    return QuizQuestion.deleteMany({ moduleId, quizType });
+  }
+
+  // PROCEDURE: Get quiz summary statistics
+  async getQuizSummary() {
+    return QuizQuestion.aggregate([
+      {
+        $group: {
+          _id: { moduleId: '$moduleId', quizType: '$quizType' },
+          questions: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          moduleId: '$_id.moduleId',
+          quizType: '$_id.quizType',
+          questions: 1,
+          _id: 0,
+        },
+      },
+      {
+        $sort: { moduleId: 1, quizType: 1 },
+      },
+    ]).exec();
+  }
+
+  // PROCEDURE: Create quiz result
+  async createResult(data) {
+    const result = await Result.create(data);
+    return result.toObject();
+  }
+
+  // PROCEDURE: Find result by user, module, and test type
+  async findResultByUserAndModule(userId, moduleId, testType) {
+    return Result.findOne({ userId, moduleId, testType }).lean();
+  }
+
+  // PROCEDURE: Create NASA-TLX submission
+  async createNasaSubmission(data) {
+    const record = await NasaTlx.create(data);
+    return record.toObject();
+  }
+
+  // PROCEDURE: Find NASA-TLX submission
+  async findNasaSubmissionByUserAndModule(userId, moduleId) {
+    return NasaTlx.findOne({ userId, moduleId }).lean();
+  }
+}
+
+export default new QuizRepository();
+
+
+4.3 MODULE REPOSITORY - src/repositories/moduleRepository.js
+================================================================================
+(Similar structure for module data access)
+- findById(id): Find module by ID
+- list(): Get all modules
+- create(data): Create new module
+- updateById(id, data): Update module
+- deleteById(id): Delete module
+
+
+4.4 RESULT REPOSITORY - src/repositories/resultRepository.js
+================================================================================
+(Similar structure for result data access)
+- Methods for fetching, creating, and updating results
+
+
+================================================================================
+SECTION 5: BUSINESS LOGIC LAYER - SERVICES
+================================================================================
+
+5.1 AUTHENTICATION SERVICE - src/services/authService.js
+================================================================================
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import userRepository from '../repositories/userRepository.js';
+import { USER_ROLES } from '../config/constants.js';
+import { generateAccessToken, generateRefreshToken } from '../utils/generateToken.js';
+import env from '../config/env.js';
+
+class AuthService {
+  // PROCEDURE: Register new student user
+  async registerUser(payload) {
+    const existingUser = await userRepository.findByEmail(payload.email);
+    if (existingUser) {
+      throw Object.assign(new Error('Email is already registered'), { statusCode: 409 });
+    }
+
+    const user = await userRepository.create({
+      ...payload,
+      role: USER_ROLES.STUDENT,
+      status: 'active',
+      group: null,
+    });
+
+    return this.issueTokens(user);
+  }
+
+  // PROCEDURE: Register new admin user
+  async adminRegister(payload, adminSecret) {
+    if (adminSecret !== env.adminSecret) {
+      throw Object.assign(new Error('Invalid admin secret'), { statusCode: 403 });
+    }
+
+    const existingUser = await userRepository.findByEmail(payload.email);
+    if (existingUser) {
+      throw Object.assign(new Error('Email is already registered'), { statusCode: 409 });
+    }
+
+    const user = await userRepository.create({
+      ...payload,
+      role: USER_ROLES.ADMIN,
+      status: 'active',
+      group: null,
+    });
+
+    return this.issueTokens(user);
+  }
+
+  // PROCEDURE: Login student user
+  async loginUser(credentials) {
+    const user = await userRepository.findByEmail(credentials.email);
+    if (!user) {
+      throw Object.assign(new Error('Invalid credentials'), { statusCode: 401 });
+    }
+
+    const isMatch = await bcrypt.compare(credentials.password, user.password);
+    if (!isMatch) {
+      throw Object.assign(new Error('Invalid credentials'), { statusCode: 401 });
+    }
+
+    return this.issueTokens(user);
+  }
+
+  // PROCEDURE: Login admin user
+  async adminLogin(credentials) {
+    const user = await userRepository.findByEmail(credentials.email);
+    if (!user || user.role !== USER_ROLES.ADMIN) {
+      throw Object.assign(new Error('Invalid admin credentials'), { statusCode: 401 });
+    }
+
+    const isMatch = await bcrypt.compare(credentials.password, user.password);
+    if (!isMatch) {
+      throw Object.assign(new Error('Invalid admin credentials'), { statusCode: 401 });
+    }
+
+    return this.issueTokens(user);
+  }
+
+  // PROCEDURE: Get current user details
+  async getCurrentUser(userId) {
+    const user = await userRepository.findById(userId);
+    if (!user) {
+      throw Object.assign(new Error('User not found'), { statusCode: 404 });
+    }
+    return user;
+  }
+
+  // PROCEDURE: Issue JWT tokens
+  issueTokens(user) {
+    const payload = { id: user._id, email: user.email, role: user.role };
+    const accessToken = generateAccessToken(payload);
+    const refreshToken = generateRefreshToken(payload);
+
+    return {
+      user: user.toJSON ? user.toJSON() : user,
+      accessToken,
+      refreshToken,
+    };
+  }
+
+  // PROCEDURE: Refresh access token
+  async refreshToken(refreshToken) {
+    try {
+      const decoded = jwt.verify(refreshToken, env.jwtRefreshSecret);
+      const user = await userRepository.findById(decoded.id);
+      if (!user) {
+        throw Object.assign(new Error('User not found'), { statusCode: 404 });
+      }
+      return this.issueTokens(user);
+    } catch (error) {
+      throw Object.assign(new Error('Invalid refresh token'), { statusCode: 401 });
+    }
+  }
+}
+
+export default new AuthService();
+
+
+5.2 QUIZ SERVICE - src/services/quizService.js
+================================================================================
+import quizRepository from '../repositories/quizRepository.js';
+import moduleRepository from '../repositories/moduleRepository.js';
+import { TEST_TYPES } from '../config/constants.js';
+import { isDelayedWindowOpen } from '../utils/dateHelpers.js';
+
+class QuizService {
+  // PROCEDURE: Retrieve quiz questions
+  async getQuestions(moduleId, quizType, includeAnswers = false) {
+    const module = await moduleRepository.findById(moduleId);
+    if (!module) {
+      throw Object.assign(new Error('Module not found'), { statusCode: 404 });
+    }
+
+    const questions = quizType
+      ? await quizRepository.findQuestionsByModuleIdAndType(moduleId, quizType)
+      : await quizRepository.findQuestionsByModuleId(moduleId);
+
+    if (includeAnswers) {
+      return questions;
+    }
+
+    return questions.map(({ correctAnswerIndex, explanation, ...question }) => question);
+  }
+
+  // PROCEDURE: Submit quiz answers
+  async submitQuiz(payload, userId) {
+    const { moduleId, answers, testType = TEST_TYPES.IMMEDIATE, timeSpent = 0 } = payload;
+    const module = await moduleRepository.findById(moduleId);
+    if (!module) {
+      throw Object.assign(new Error('Module not found'), { statusCode: 404 });
+    }
+
+    const existing = await quizRepository.findResultByUserAndModule(userId, moduleId, testType);
+    if (existing) {
+      throw Object.assign(new Error('Duplicate submission detected'), { statusCode: 409 });
+    }
+
+    const questions = await quizRepository.findQuestionsByModuleId(moduleId);
+    let score = 0;
+    const normalizedAnswers = answers.map((answer, index) => {
+      const question = questions[index];
+      const selectedIndex = typeof answer === 'number' ? answer : answer.selectedIndex;
+      if (question && selectedIndex === question.correctAnswerIndex) {
+        score += 1;
+      }
+      return {
+        questionNumber: question?.questionNumber || index + 1,
+        selectedIndex,
+      };
+    });
+
+    const percentage = Number(((score / questions.length) * 100).toFixed(2));
+    const result = await quizRepository.createResult({
+      userId,
+      moduleId,
+      testType,
+      score,
+      percentage,
+      answersSubmitted: normalizedAnswers,
+      timeSpent,
+      completedAt: new Date(),
+      groupAssignment: null,
+    });
+
+    return result;
+  }
+
+  // PROCEDURE: Check delayed quiz eligibility
+  async getEligibility(moduleId, userId) {
+    const existing = await quizRepository.findResultByUserAndModule(userId, moduleId, TEST_TYPES.IMMEDIATE);
+    if (!existing) {
+      return {
+        eligible: false,
+        message: 'Delayed assessment unavailable.',
+      };
+    }
+
+    const eligible = isDelayedWindowOpen(existing.completedAt);
+    return {
+      eligible,
+      message: eligible ? 'Delayed assessment available.' : 'Delayed assessment unavailable.',
+    };
+  }
+}
+
+export default new QuizService();
+
+
+5.3 ANALYTICS SERVICE - src/services/analyticsService.js
+================================================================================
+(Business logic for dashboard statistics, participant analytics, group assignments)
+- getDashboardStats(): Generate dashboard statistics
+- getParticipants(): Fetch participant data
+- assignGroups(): Assign users to control/experimental groups
+- getAnalytics(): Compile analytics data
+- getResults(): Aggregate results
+
+
+5.4 EXPORT SERVICE - src/services/exportService.js
+================================================================================
+(Handles CSV export of results for research data analysis)
+- exportResults(): Export all results as CSV
+
+
+================================================================================
+SECTION 6: REQUEST HANDLING LAYER - CONTROLLERS
+================================================================================
+
+6.1 AUTHENTICATION CONTROLLER - src/controllers/authController.js
+================================================================================
+import authService from '../services/authService.js';
+import { sendError, sendSuccess } from '../utils/responseFormatter.js';
+
+// PROCEDURE: Handle student registration
+export const register = async (req, res, next) => {
+  try {
+    const result = await authService.registerUser(req.body);
+    return sendSuccess(res, 'Registration successful', result, 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Handle admin registration
+export const adminRegister = async (req, res, next) => {
+  try {
+    const { adminSecret, ...userData } = req.body;
+    const result = await authService.adminRegister(userData, adminSecret);
+    return sendSuccess(res, 'Admin registration successful', result, 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Handle student login
+export const login = async (req, res, next) => {
+  try {
+    const result = await authService.loginUser(req.body);
+    return sendSuccess(res, 'Login successful', result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Handle admin login
+export const adminLogin = async (req, res, next) => {
+  try {
+    const result = await authService.adminLogin(req.body);
+    return sendSuccess(res, 'Admin login successful', result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Get current user information
+export const getCurrentUser = async (req, res, next) => {
+  try {
+    const user = await authService.getCurrentUser(req.user._id);
+    return sendSuccess(res, 'Current user fetched', user);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Refresh JWT tokens
+export const refresh = async (req, res, next) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return sendError(res, 'Refresh token required', ['Refresh token is required'], 400);
+    }
+    const result = await authService.refreshToken(refreshToken);
+    return sendSuccess(res, 'Token refreshed', result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+6.2 QUIZ CONTROLLER - src/controllers/quizController.js
+================================================================================
+import quizService from '../services/quizService.js';
+import quizRepository from '../repositories/quizRepository.js';
+import { sendError, sendSuccess } from '../utils/responseFormatter.js';
+import { normalizeQuizQuestions } from '../utils/adminPayloads.js';
+import QuizQuestion from '../models/QuizQuestion.js';
+
+// PROCEDURE: Retrieve quiz questions
+export const getQuestions = async (req, res, next) => {
+  try {
+    const quizType = req.query.quizType?.toString().trim().toLowerCase();
+    const includeAnswers = req.query.includeAnswers === 'true';
+    const questions = await quizService.getQuestions(req.params.moduleId, quizType, includeAnswers);
+    return sendSuccess(res, 'Questions fetched', questions);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Submit quiz responses
+export const submitQuiz = async (req, res, next) => {
+  try {
+    const result = await quizService.submitQuiz(req.body, req.user._id);
+    return sendSuccess(res, 'Quiz submitted', result, 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Check delayed assessment eligibility
+export const getEligibility = async (req, res, next) => {
+  try {
+    const eligibility = await quizService.getEligibility(req.params.moduleId, req.user._id);
+    return sendSuccess(res, 'Eligibility checked', eligibility);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Get quiz summary statistics
+export const getQuizSummary = async (req, res, next) => {
+  try {
+    const summary = await quizRepository.getQuizSummary();
+    return sendSuccess(res, 'Quiz summary fetched', summary);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Create quiz questions
+export const createQuiz = async (req, res, next) => {
+  try {
+    const { moduleId, quizType, questions = [] } = req.body;
+    if (!moduleId) {
+      return sendError(res, 'Module id is required', ['Module id is required'], 400);
+    }
+
+    const normalizedQuestions = normalizeQuizQuestions(questions);
+    if (!normalizedQuestions.length) {
+      return sendError(res, 'At least one question is required', ['At least one question is required'], 400);
+    }
+
+    const createdQuestions = await QuizQuestion.insertMany(
+      normalizedQuestions.map((question) => ({
+        moduleId,
+        quizType: (quizType || 'immediate').toString().trim().toLowerCase(),
+        ...question,
+      }))
+    );
+
+    return sendSuccess(res, 'Quiz created', {
+      moduleId,
+      quizType: quizType || 'immediate',
+      questions: createdQuestions,
+    }, 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+6.3 MODULE CONTROLLER - src/controllers/moduleController.js
+================================================================================
+import moduleRepository from '../repositories/moduleRepository.js';
+import { sendError, sendSuccess } from '../utils/responseFormatter.js';
+import { buildModulePayload } from '../utils/adminPayloads.js';
+
+// PROCEDURE: Get all modules
+export const getAllModules = async (req, res, next) => {
+  try {
+    const modules = await moduleRepository.list();
+    return sendSuccess(res, 'Modules fetched', modules);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Get module by ID
+export const getModuleById = async (req, res, next) => {
+  try {
+    const module = await moduleRepository.findById(req.params.id);
+    if (!module) {
+      return sendError(res, 'Module not found', [], 404);
+    }
+    return sendSuccess(res, 'Module fetched', module);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Create module
+export const createModule = async (req, res, next) => {
+  try {
+    const payload = buildModulePayload({
+      title: req.body.title,
+      description: req.body.description,
+      status: req.body.status,
+      sectionInputs: req.body.sections || req.body.sectionInputs || [],
+    });
+
+    const module = await moduleRepository.create({ ...payload, createdBy: req.user._id });
+    return sendSuccess(res, 'Module created', module, 201);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Update module
+export const updateModule = async (req, res, next) => {
+  try {
+    const payload = buildModulePayload({
+      title: req.body.title,
+      description: req.body.description,
+      status: req.body.status,
+      sectionInputs: req.body.sections || req.body.sectionInputs || [],
+    });
+
+    const module = await moduleRepository.updateById(req.params.id, payload);
+    if (!module) {
+      return sendError(res, 'Module not found', [], 404);
+    }
+    return sendSuccess(res, 'Module updated', module);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Delete module
+export const deleteModule = async (req, res, next) => {
+  try {
+    const module = await moduleRepository.deleteById(req.params.id);
+    if (!module) {
+      return sendError(res, 'Module not found', [], 404);
+    }
+    return sendSuccess(res, 'Module deleted', {});
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+6.4 RESULT CONTROLLER - src/controllers/resultController.js
+================================================================================
+import Result from '../models/Result.js';
+import { sendSuccess, sendError } from '../utils/responseFormatter.js';
+import quizService from '../services/quizService.js';
+
+// PROCEDURE: Get immediate test result
+export const getImmediateResult = async (req, res, next) => {
+  try {
+    const result = await Result.findOne({ 
+      userId: req.user._id, 
+      moduleId: req.params.moduleId, 
+      testType: 'immediate' 
+    }).lean();
+    if (!result) {
+      return sendError(res, 'Immediate result not found', [], 404);
+    }
+    return sendSuccess(res, 'Immediate result fetched', result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Get delayed test result
+export const getDelayedResult = async (req, res, next) => {
+  try {
+    const result = await Result.findOne({ 
+      userId: req.user._id, 
+      moduleId: req.params.moduleId, 
+      testType: 'delayed' 
+    }).lean();
+    if (!result) {
+      return sendError(res, 'Delayed result not found', [], 404);
+    }
+    return sendSuccess(res, 'Delayed result fetched', result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Check delayed test eligibility
+export const getEligibility = async (req, res, next) => {
+  try {
+    const eligibility = await quizService.getEligibility(req.params.moduleId, req.user._id);
+    return sendSuccess(res, 'Eligibility checked', eligibility);
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+6.5 ADMIN CONTROLLER - src/controllers/adminController.js
+================================================================================
+import analyticsService from '../services/analyticsService.js';
+import exportService from '../services/exportService.js';
+import { sendSuccess } from '../utils/responseFormatter.js';
+
+// PROCEDURE: Get dashboard statistics
+export const getDashboard = async (req, res, next) => {
+  try {
+    const stats = await analyticsService.getDashboardStats();
+    return sendSuccess(res, 'Dashboard data fetched', stats);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Get list of participants
+export const getParticipants = async (req, res, next) => {
+  try {
+    const participants = await analyticsService.getParticipants();
+    return sendSuccess(res, 'Participants fetched', participants);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Assign users to control/experimental groups
+export const assignGroups = async (req, res, next) => {
+  try {
+    const { participantIds, group } = req.body;
+    const participants = await analyticsService.assignGroups(participantIds, group);
+    return sendSuccess(res, 'Groups assigned', participants);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Get analytics data
+export const getAnalytics = async (req, res, next) => {
+  try {
+    const analytics = await analyticsService.getAnalytics();
+    return sendSuccess(res, 'Analytics fetched', analytics);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Get all results
+export const getResults = async (req, res, next) => {
+  try {
+    const results = await analyticsService.getResults();
+    return sendSuccess(res, 'Results fetched', results);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// PROCEDURE: Export results to CSV
+export const exportCsv = async (req, res, next) => {
+  try {
+    const csv = await exportService.exportResults();
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=focuslearn-results.csv');
+    return res.send(csv);
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+================================================================================
+SECTION 7: ROUTING LAYER
+================================================================================
+
+7.1 AUTHENTICATION ROUTES - src/routes/authRoutes.js
+================================================================================
+import express from 'express';
+import { 
+  register, 
+  adminRegister, 
+  login, 
+  adminLogin, 
+  getCurrentUser, 
+  refresh 
+} from '../controllers/authController.js';
+import authMiddleware from '../middlewares/authMiddleware.js';
+import validateRequest from '../middlewares/validateRequest.js';
+import { registerValidator, loginValidator } from '../validators/authValidator.js';
+
+const router = express.Router();
+
+// Public routes
+router.post('/register', registerValidator, validateRequest, register);
+router.post('/admin/register', registerValidator, validateRequest, adminRegister);
+router.post('/login', loginValidator, validateRequest, login);
+router.post('/admin/login', loginValidator, validateRequest, adminLogin);
+router.post('/refresh', refresh);
+
+// Protected routes
+router.get('/me', authMiddleware, getCurrentUser);
+
+export default router;
+
+
+7.2 QUIZ ROUTES - src/routes/quizRoutes.js
+================================================================================
+(Routes for quiz operations)
+- GET /api/quiz/:moduleId/questions - Get quiz questions
+- POST /api/quiz/submit - Submit quiz answers
+- GET /api/quiz/:moduleId/eligibility - Check delayed assessment eligibility
+- GET /api/quiz/summary - Get quiz summary
+- POST /api/quiz/create - Create quiz
+- PUT /api/quiz/:moduleId/update - Update quiz
+
+
+7.3 MODULE ROUTES - src/routes/moduleRoutes.js
+================================================================================
+(Routes for module management)
+- GET /api/modules - Get all modules
+- GET /api/modules/:id - Get module by ID
+- POST /api/modules - Create module
+- PUT /api/modules/:id - Update module
+- DELETE /api/modules/:id - Delete module
+
+
+7.4 RESULT ROUTES - src/routes/resultRoutes.js
+================================================================================
+(Routes for result retrieval)
+- GET /api/results/:moduleId/immediate - Get immediate test result
+- GET /api/results/:moduleId/delayed - Get delayed test result
+- GET /api/results/:moduleId/eligibility - Check eligibility
+
+
+7.5 ADMIN ROUTES - src/routes/adminRoutes.js
+================================================================================
+(Routes for admin operations)
+- GET /api/admin/dashboard - Get dashboard statistics
+- GET /api/admin/participants - Get participants
+- POST /api/admin/assign-groups - Assign groups
+- GET /api/admin/analytics - Get analytics
+- GET /api/admin/results - Get results
+- GET /api/admin/export - Export CSV
+
+
+================================================================================
+SECTION 8: MIDDLEWARE LAYER
+================================================================================
+
+8.1 AUTHENTICATION MIDDLEWARE - src/middlewares/authMiddleware.js
+================================================================================
+import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
+import env from '../config/env.js';
+import { sendError } from '../utils/responseFormatter.js';
+
+// PROCEDURE: Verify JWT and attach user to request
+const authMiddleware = async (req, res, next) => {
+  try {
+    let token = null;
+
+    // PROCEDURE: Extract token from header or cookies
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      token = req.headers.authorization.split(' ')[1];
+    } else if (req.cookies?.token) {
+      token = req.cookies.token;
+    }
+
+    if (!token) {
+      return sendError(res, 'Unauthorized', ['Authentication token is missing'], 401);
+    }
+
+    // PROCEDURE: Verify token and fetch user
+    const decoded = jwt.verify(token, env.jwtSecret);
+    const user = await User.findById(decoded.id).select('-password -refreshToken');
+
+    if (!user) {
+      return sendError(res, 'Unauthorized', ['User no longer exists'], 401);
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    return sendError(res, 'Unauthorized', ['Invalid or expired token'], 401);
+  }
+};
+
+export default authMiddleware;
+
+
+8.2 ERROR HANDLING MIDDLEWARE - src/middlewares/errorMiddleware.js
+================================================================================
+import { sendError } from '../utils/responseFormatter.js';
+
+// PROCEDURE: Global error handler
+const errorMiddleware = (err, req, res, next) => {
+  console.error(err);
+  const statusCode = err.statusCode || 500;
+  const message = err.message || 'Internal server error';
+  return sendError(res, message, [message], statusCode);
+};
+
+export default errorMiddleware;
+
+
+8.3 RATE LIMITING MIDDLEWARE - src/middlewares/rateLimiter.js
+================================================================================
+(Implementation using express-rate-limit)
+- Configurable window and request limits
+- Prevents API abuse and DDoS attacks
+
+
+8.4 REQUEST VALIDATION MIDDLEWARE - src/middlewares/validateRequest.js
+================================================================================
+(Validates request body using express-validator)
+- Checks validation errors from validators
+- Returns detailed error messages
+
+
+================================================================================
+SECTION 9: REQUEST VALIDATION LAYER
+================================================================================
+
+9.1 AUTHENTICATION VALIDATORS - src/validators/authValidator.js
+================================================================================
+import { body } from 'express-validator';
+
+// PROCEDURE: Validate registration request
+export const registerValidator = [
+  body('fullName').trim().notEmpty().withMessage('Full name is required'),
+  body('email').isEmail().withMessage('A valid email is required'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
+];
+
+// PROCEDURE: Validate login request
+export const loginValidator = [
+  body('email').isEmail().withMessage('A valid email is required'),
+  body('password').notEmpty().withMessage('Password is required'),
+];
+
+
+9.2 MODULE VALIDATORS - src/validators/moduleValidator.js
+================================================================================
+(Validation for module creation and update)
+- Validates title, description, sections
+- Ensures required fields
+
+
+9.3 QUIZ VALIDATORS - src/validators/quizValidator.js
+================================================================================
+(Validation for quiz submission)
+- Validates answers format
+- Ensures module exists
+
+
+9.4 NASA-TLX VALIDATORS - src/validators/nasaValidator.js
+================================================================================
+(Validation for NASA-TLX survey data)
+- Validates rating scales (1-10)
+- Ensures all dimensions provided
+
+
+================================================================================
+SECTION 10: UTILITY FUNCTIONS
+================================================================================
+
+10.1 RESPONSE FORMATTER - src/utils/responseFormatter.js
+================================================================================
+// PROCEDURE: Send success response
+export const sendSuccess = (res, message = 'Request successful', data = {}, statusCode = 200) => {
+  return res.status(statusCode).json({ success: true, message, data });
+};
+
+// PROCEDURE: Send error response
+export const sendError = (res, message = 'Request failed', errors = [], statusCode = 400) => {
+  return res.status(statusCode).json({ success: false, message, errors });
+};
+
+
+10.2 TOKEN GENERATION - src/utils/generateToken.js
+================================================================================
+import jwt from 'jsonwebtoken';
+import env from '../config/env.js';
+
+// PROCEDURE: Generate access token (short-lived)
+export const generateAccessToken = (payload) =>
+  jwt.sign(payload, env.jwtSecret, { expiresIn: env.jwtExpiresIn });
+
+// PROCEDURE: Generate refresh token (long-lived)
+export const generateRefreshToken = (payload) =>
+  jwt.sign(payload, env.jwtRefreshSecret, { expiresIn: env.jwtRefreshExpiresIn });
+
+
+10.3 DATE HELPERS - src/utils/dateHelpers.js
+================================================================================
+(Utility functions for date operations)
+- isDelayedWindowOpen(): Check if delayed assessment window is open
+- Typically 48 hours after immediate assessment
+
+
+10.4 CSV EXPORTER - src/utils/csvExporter.js
+================================================================================
+(Utility for exporting data to CSV format)
+- Converts JSON data to CSV
+- Handles special characters and formatting
+
+
+10.5 ADMIN PAYLOADS - src/utils/adminPayloads.js
+================================================================================
+// PROCEDURE: Build module payload
+export const buildModulePayload = (input) => {
+  return {
+    title: input.title,
+    description: input.description,
+    sections: (input.sectionInputs || []).map(section => ({
+      title: section.title,
+      content: section.content,
+    })),
+    isActive: input.status !== 'inactive',
+  };
+};
+
+// PROCEDURE: Normalize quiz questions
+export const normalizeQuizQuestions = (questions) => {
+  return questions.map((q, idx) => ({
+    questionNumber: idx + 1,
+    questionText: q.questionText || q.text,
+    options: q.options || q.choices,
+    correctAnswerIndex: q.correctAnswerIndex || q.correct,
+    explanation: q.explanation || '',
+  }));
+};
+
+
+================================================================================
+SECTION 11: APPLICATION STARTUP
+================================================================================
+
+11.1 SERVER ENTRY POINT - server.js
+================================================================================
+import app from './src/app.js';
+import env from './src/config/env.js';
+import { connectDatabase } from './src/config/db.js';
+
+let isConnected = false;
+
+// PROCEDURE: Ensure database connection
+const ensureDatabaseConnection = async () => {
+  if (isConnected) return;
+
+  await connectDatabase();
+  isConnected = true;
+};
+
+// PROCEDURE: Start server
+const startServer = async () => {
+  await ensureDatabaseConnection();
+  app.listen(env.port, 'localhost', () => {
+    console.log(`FocusLearn API listening on port ${env.port}`);
+  });
+};
+
+startServer().catch((error) => {
+  console.error('Failed to start server:', error);
+  process.exit(1);
+});
+
+
+11.2 EXPRESS APPLICATION - src/app.js
+================================================================================
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import compression from 'compression';
+import cookieParser from 'cookie-parser';
+import mongoSanitize from 'express-mongo-sanitize';
+import xss from 'xss-clean';
+import env from './config/env.js';
+import authRoutes from './routes/authRoutes.js';
+import moduleRoutes from './routes/moduleRoutes.js';
+import quizRoutes from './routes/quizRoutes.js';
+import nasaRoutes from './routes/nasaRoutes.js';
+import resultRoutes from './routes/resultRoutes.js';
+import logRoutes from './routes/logRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
+import rateLimiter from './middlewares/rateLimiter.js';
+import errorMiddleware from './middlewares/errorMiddleware.js';
+import { sendError } from './utils/responseFormatter.js';
+
+const app = express();
+
+// PROCEDURE: Security middleware
+app.use(helmet());
+
+// PROCEDURE: CORS configuration
+const corsOptions = {
+  origin: env.corsOrigin.split(',').map((origin) => origin.trim()),
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 200,
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
+// PROCEDURE: Logging and compression
+app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
+app.use(compression());
+app.use(cookieParser());
+
+// PROCEDURE: Request parsing
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// PROCEDURE: Security and validation
+app.use(rateLimiter);
+app.use(mongoSanitize());
+app.use(xss());
+
+// PROCEDURE: Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ success: true, message: 'FocusLearn API is healthy' });
+});
+
+// PROCEDURE: API routes
+app.use('/api/auth', authRoutes);
+app.use('/api/modules', moduleRoutes);
+app.use('/api/quiz', quizRoutes);
+app.use('/api/nasa-tlx', nasaRoutes);
+app.use('/api/results', resultRoutes);
+app.use('/api/logs', logRoutes);
+app.use('/api/admin', adminRoutes);
+
+// PROCEDURE: 404 handler
+app.use((req, res) => {
+  return sendError(res, 'Route not found', ['The requested resource was not found'], 404);
+});
+
+// PROCEDURE: Global error handler
+app.use(errorMiddleware);
+
+export default app;
+
+
+================================================================================
+SECTION 12: ARCHITECTURE OVERVIEW
+================================================================================
+
+12.1 SYSTEM ARCHITECTURE DIAGRAM
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                         CLIENT APPLICATION                          │
+│                   (Web Browser / Mobile App)                         │
+└───────────────────────────────┬─────────────────────────────────────┘
+                                │ HTTP/HTTPS Requests
+                                ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      EXPRESS.JS API SERVER                           │
+├─────────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  MIDDLEWARE LAYER                                            │  │
+│  │  • Security (Helmet, XSS Prevention, Mongo Sanitization)    │  │
+│  │  • CORS & Authentication                                     │  │
+│  │  • Rate Limiting & Logging (Morgan)                          │  │
+│  │  • Request Validation & Compression                          │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  ROUTING LAYER                                               │  │
+│  │  • /api/auth      - Authentication endpoints                 │  │
+│  │  • /api/modules   - Module management                        │  │
+│  │  • /api/quiz      - Quiz operations                          │  │
+│  │  • /api/nasa-tlx  - Survey submissions                       │  │
+│  │  • /api/results   - Result retrieval                         │  │
+│  │  • /api/logs      - Session logging                          │  │
+│  │  • /api/admin     - Admin operations                         │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  CONTROLLER LAYER                                            │  │
+│  │  • authController      - Auth logic                          │  │
+│  │  • moduleController    - Module management logic             │  │
+│  │  • quizController      - Quiz operation logic                │  │
+│  │  • resultController    - Result retrieval logic              │  │
+│  │  • adminController     - Admin panel logic                   │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  SERVICE LAYER (Business Logic)                              │  │
+│  │  • authService         - User authentication                 │  │
+│  │  • quizService         - Quiz grading & eligibility          │  │
+│  │  • analyticsService    - Statistical analysis                │  │
+│  │  • exportService       - CSV export functionality            │  │
+│  │  • loggingService      - Event logging                       │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  REPOSITORY LAYER (Data Access)                              │  │
+│  │  • userRepository      - User CRUD operations                │  │
+│  │  • moduleRepository    - Module CRUD operations              │  │
+│  │  • quizRepository      - Quiz data access                    │  │
+│  │  • resultRepository    - Result data access                  │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  MODEL LAYER (Database Schema)                               │  │
+│  │  • User          - User accounts & authentication            │  │
+│  │  • Module        - Study modules with sections               │  │
+│  │  • QuizQuestion  - Quiz questions & answers                 │  │
+│  │  • Result        - Quiz submission results                   │  │
+│  │  • SessionLog    - User session events                       │  │
+│  │  • NasaTlx       - NASA-TLX survey responses                 │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└──────────────┬──────────────────────────────────────────────────────┘
+               │ Mongoose ODM
+               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      MONGODB DATABASE                                │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │ Collections:                                                  │  │
+│  │ • users          - User accounts & profiles                  │  │
+│  │ • modules        - Study content                             │  │
+│  │ • quizquestions  - Quiz questions & answers                │  │
+│  │ • results        - Quiz submission records                   │  │
+│  │ • sessionlogs    - User activity logs                        │  │
+│  │ • nasatlxs       - NASA-TLX survey responses                 │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────┘
+
+
+12.2 DATA FLOW ARCHITECTURE
+================================================================================
+
+AUTHENTICATION FLOW:
+┌──────────────────────────────────────────────────────────────┐
+│ 1. User Registration                                          │
+│    ├── POST /api/auth/register with credentials              │
+│    ├── registerValidator validates input                      │
+│    ├── authService.registerUser() processes registration    │
+│    ├── Password hashed with bcryptjs (12 rounds)            │
+│    ├── User saved to MongoDB                                 │
+│    ├── JWT tokens generated (access + refresh)              │
+│    └── Response with tokens and user data                    │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│ 2. User Login                                                 │
+│    ├── POST /api/auth/login with credentials                 │
+│    ├── loginValidator validates input                        │
+│    ├── authService.loginUser() verifies credentials         │
+│    ├── Password compared with bcrypt.compare()              │
+│    ├── JWT tokens generated and returned                     │
+│    └── Response with tokens                                  │
+└──────────────────────────────────────────────────────────────┘
+
+QUIZ SUBMISSION FLOW:
+┌──────────────────────────────────────────────────────────────┐
+│ 1. Student completes quiz                                     │
+│    ├── POST /api/quiz/submit with answers                    │
+│    ├── authMiddleware verifies JWT token                     │
+│    ├── quizService.submitQuiz() processes submission        │
+│    ├── Answers compared with correct answers                 │
+│    ├── Score and percentage calculated                       │
+│    ├── Result saved to MongoDB                               │
+│    ├── Eligibility for delayed test determined              │
+│    └── Response with score and detailed results             │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│ 2. Delayed Assessment Eligibility Check                       │
+│    ├── GET /api/quiz/:moduleId/eligibility                  │
+│    ├── quizService.getEligibility() checks                  │
+│    ├── Verifies immediate test was completed                │
+│    ├── Checks if 48-hour window is still open               │
+│    ├── Returns eligibility status                            │
+│    └── Student can proceed if eligible                       │
+└──────────────────────────────────────────────────────────────┘
+
+ANALYTICS & EXPORT FLOW:
+┌──────────────────────────────────────────────────────────────┐
+│ 1. Admin requests analytics dashboard                         │
+│    ├── GET /api/admin/dashboard                              │
+│    ├── analyticsService.getDashboardStats()                │
+│    ├── Aggregates data from multiple collections             │
+│    ├── Calculates statistics (counts, averages, etc.)       │
+│    ├── Groups by control/experimental groups                 │
+│    └── Returns comprehensive analytics data                 │
+└──────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────┐
+│ 2. Admin exports results to CSV                              │
+│    ├── GET /api/admin/export                                 │
+│    ├── exportService.exportResults()                        │
+│    ├── Fetches all results from database                     │
+│    ├── Converts to CSV format                                │
+│    ├── Sets proper headers for download                      │
+│    └── User downloads file as attachment                     │
+└──────────────────────────────────────────────────────────────┘
+
+
+12.3 SECURITY ARCHITECTURE
+================================================================================
+
+AUTHENTICATION & AUTHORIZATION:
+• JWT-based authentication with access and refresh tokens
+• Refresh tokens stored in database for revocation support
+• Access tokens with configurable expiration (default 7 days)
+• Refresh tokens with longer expiration (default 30 days)
+• Role-based access control (STUDENT, ADMIN)
+• Protected endpoints require valid JWT
+
+PASSWORD SECURITY:
+• Bcryptjs with 12 salt rounds for password hashing
+• Password never stored in plain text
+• Password hidden from JSON serialization
+• Secure comparison during login
+
+REQUEST SECURITY:
+• Helmet middleware for security headers
+• CORS with configurable allowed origins
+• Rate limiting (default 100 requests per 15 minutes)
+• MongoDB injection prevention via express-mongo-sanitize
+• XSS attack prevention via xss-clean
+• Request body size limit (10MB)
+
+DATA PROTECTION:
+• MongoDB connection with environment variable configuration
+• Sensitive fields excluded from lean() queries
+• Error messages don't leak sensitive information
+• Admin operations require admin secret validation
+
+
+12.4 ERROR HANDLING STRATEGY
+================================================================================
+
+VALIDATION ERRORS:
+• express-validator performs input validation
+• Detailed error messages in response
+• HTTP 400 for validation failures
+
+AUTHENTICATION ERRORS:
+• HTTP 401 for missing or invalid tokens
+• HTTP 401 for credentials mismatch
+• HTTP 403 for unauthorized operations
+
+BUSINESS LOGIC ERRORS:
+• HTTP 409 for duplicate submissions
+• HTTP 404 for not found resources
+• Custom statusCode in error objects
+
+GLOBAL ERROR HANDLING:
+• errorMiddleware catches all uncaught errors
+• Logs errors for debugging
+• Returns consistent error response format
+• HTTP 500 for unexpected errors
+
+
+================================================================================
+SECTION 13: RESEARCH METHODOLOGY APPLICATION
+================================================================================
+
+13.1 STUDY DESIGN IMPLEMENTATION
+================================================================================
+
+PARTICIPANT RANDOMIZATION:
+• Control Group: Standard learning interface
+• Experimental Group: Enhanced cognitive load assessment
+• Random assignment via admin API (/api/admin/assign-groups)
+• Group data tracked in User.group field
+
+INTERVENTION TRACKING:
+• Immediate Assessment: Knowledge retention test
+• Delayed Assessment: 48-hour follow-up test
+• NASA-TLX Survey: Workload subjective assessment
+• Session Logging: All interactions tracked with timestamps
+
+DATA COLLECTION:
+• Quiz performance (scores, response times)
+• Learning session duration and engagement
+• NASA-TLX cognitive workload ratings
+• Demographic data (age, gender, device type)
+• Complete session logs with event tracking
+
+
+13.2 ANALYTICS & METRICS
+================================================================================
+
+PERFORMANCE METRICS:
+• Quiz scores and percentages
+• Time spent on assessments
+• Comparison between immediate and delayed tests
+• Score correlation with cognitive load
+
+WORKLOAD METRICS (NASA-TLX):
+• Mental Demand rating (1-10)
+• Physical Demand rating (1-10)
+• Temporal Demand rating (1-10)
+• Performance rating (1-10)
+• Effort rating (1-10)
+• Frustration rating (1-10)
+• Composite workload score
+
+ENGAGEMENT METRICS:
+• Session duration and frequency
+• Content completion rates
+• Quiz attempt patterns
+• Device type analysis
+
+COMPARATIVE ANALYSIS:
+• Control vs. Experimental group performance
+• Statistical significance testing capability
+• Effect size calculations
+• Workload distribution analysis
+
+
+13.3 DATA EXPORT FOR RESEARCH
+================================================================================
+
+CSV EXPORT FORMAT:
+• All user results with demographic data
+• Quiz performance records
+• NASA-TLX responses
+• Session logs and timestamps
+• Group assignments for comparative analysis
+• Ready for statistical software import (SPSS, R, Python)
+
+
+================================================================================
+SECTION 14: DEPLOYMENT & OPERATIONS
+================================================================================
+
+14.1 DEVELOPMENT STARTUP
+================================================================================
+1. npm install                    # Install dependencies
+2. npm run seed                   # Initialize database
+3. npm run dev                    # Start with nodemon
+   - Auto-restarts on file changes
+   - Development logging enabled
+
+14.2 PRODUCTION DEPLOYMENT
+================================================================================
+1. npm install                    # Install dependencies
+2. npm run seed                   # Initialize database (if first deployment)
+3. npm start                      # Start server
+   - Production logging
+   - Error handling active
+   - All security middleware enabled
+
+14.3 ENVIRONMENT VARIABLES (.env)
+================================================================================
+NODE_ENV=production
+PORT=5000
+MONGO_URI=mongodb+srv://user:pass@cluster.mongodb.net/
+DB_NAME=focuslearn
+JWT_SECRET=your-secure-secret-key
+JWT_REFRESH_SECRET=your-refresh-secret-key
+JWT_EXPIRES_IN=7d
+JWT_REFRESH_EXPIRES_IN=30d
+CORS_ORIGIN=https://yourdomain.com
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+ADMIN_SECRET=your-admin-secret
+
+
+================================================================================
+SECTION 15: API ENDPOINT REFERENCE
+================================================================================
+
+15.1 AUTHENTICATION ENDPOINTS
+================================================================================
+POST /api/auth/register
+  Purpose: Register new student
+  Body: { fullName, email, password }
+  Response: { user, accessToken, refreshToken }
+
+POST /api/auth/login
+  Purpose: Login student
+  Body: { email, password }
+  Response: { user, accessToken, refreshToken }
+
+POST /api/auth/admin/register
+  Purpose: Register admin
+  Body: { fullName, email, password, adminSecret }
+  Response: { user, accessToken, refreshToken }
+
+POST /api/auth/admin/login
+  Purpose: Login admin
+  Body: { email, password }
+  Response: { user, accessToken, refreshToken }
+
+GET /api/auth/me
+  Purpose: Get current user (requires auth)
+  Response: { user }
+
+POST /api/auth/refresh
+  Purpose: Refresh access token
+  Body: { refreshToken }
+  Response: { user, accessToken, refreshToken }
+
+
+15.2 MODULE ENDPOINTS
+================================================================================
+GET /api/modules
+  Purpose: Get all modules
+  Response: [{ id, title, description, sections }]
+
+GET /api/modules/:id
+  Purpose: Get specific module
+  Response: { id, title, description, sections }
+
+POST /api/modules (admin only)
+  Purpose: Create module
+  Body: { title, description, sections }
+  Response: { id, title, description, sections }
+
+PUT /api/modules/:id (admin only)
+  Purpose: Update module
+  Body: { title, description, sections }
+  Response: { id, title, description, sections }
+
+DELETE /api/modules/:id (admin only)
+  Purpose: Delete module
+  Response: {}
+
+
+15.3 QUIZ ENDPOINTS
+================================================================================
+GET /api/quiz/:moduleId/questions
+  Purpose: Get quiz questions (answers excluded by default)
+  Query: ?quizType=immediate&includeAnswers=true
+  Response: [{ questionNumber, questionText, options }]
+
+POST /api/quiz/submit
+  Purpose: Submit quiz answers
+  Body: { moduleId, answers, testType, timeSpent }
+  Response: { score, percentage, answersSubmitted }
+
+GET /api/quiz/:moduleId/eligibility
+  Purpose: Check delayed assessment eligibility
+  Response: { eligible, message }
+
+GET /api/quiz/summary
+  Purpose: Get quiz summary statistics (admin)
+  Response: [{ moduleId, quizType, questions }]
+
+POST /api/quiz/create (admin only)
+  Purpose: Create quiz questions
+  Body: { moduleId, quizType, questions }
+  Response: { questions }
+
+
+15.4 RESULT ENDPOINTS
+================================================================================
+GET /api/results/:moduleId/immediate
+  Purpose: Get immediate test result
+  Response: { userId, moduleId, score, percentage, answersSubmitted }
+
+GET /api/results/:moduleId/delayed
+  Purpose: Get delayed test result
+  Response: { userId, moduleId, score, percentage, answersSubmitted }
+
+GET /api/results/:moduleId/eligibility
+  Purpose: Check eligibility for delayed test
+  Response: { eligible, message }
+
+
+15.5 NASA-TLX ENDPOINTS
+================================================================================
+POST /api/nasa-tlx/submit
+  Purpose: Submit NASA-TLX survey
+  Body: { moduleId, mentalDemand, physicalDemand, ... }
+  Response: { compositeScore }
+
+GET /api/nasa-tlx/:moduleId
+  Purpose: Get NASA-TLX responses
+  Response: { nasaTlx responses }
+
+
+15.6 LOGGING ENDPOINTS
+================================================================================
+POST /api/logs/session
+  Purpose: Log session event
+  Body: { sessionId, eventType, eventDetail }
+  Response: {}
+
+
+15.7 ADMIN ENDPOINTS
+================================================================================
+GET /api/admin/dashboard
+  Purpose: Get dashboard statistics (admin only)
+  Response: { totalUsers, completedAssessments, ... }
+
+GET /api/admin/participants
+  Purpose: Get participant list (admin only)
+  Response: [{ userId, email, fullName, group, stats }]
+
+POST /api/admin/assign-groups
+  Purpose: Assign users to groups (admin only)
+  Body: { participantIds, group }
+  Response: { participants }
+
+GET /api/admin/analytics
+  Purpose: Get analytics data (admin only)
+  Response: { statistics }
+
+GET /api/admin/results
+  Purpose: Get all results (admin only)
+  Response: [{ results }]
+
+GET /api/admin/export
+  Purpose: Export results as CSV (admin only)
+  Response: CSV file download
+
+
+================================================================================
+SECTION 16: CONCLUSION
+================================================================================
+
+This complete FocusLearn backend represents a production-ready e-learning
+platform designed for research purposes. It implements:
+
+• Secure JWT-based authentication with role-based access control
+• Comprehensive quiz management with immediate and delayed assessment
+• Research-grade analytics for cognitive workload assessment (NASA-TLX)
+• Control/Experimental group management for A/B testing
+• Session tracking and event logging for detailed user behavior analysis
+• CSV export capability for statistical analysis in research tools
+• Security best practices including encryption, input validation, and rate limiting
+• Clean architecture with separation of concerns (MVC pattern)
+• MongoDB for flexible document storage and aggregation capabilities
+• Express.js framework for robust API development
+• Comprehensive error handling and logging
+
+For research purposes, administrators can:
+1. Create study modules with content
+2. Design quiz questions with immediate and delayed components
+3. Assign participants to control and experimental groups
+4. Collect NASA-TLX cognitive workload ratings
+5. Track all student interactions and session logs
+6. Export complete datasets for statistical analysis
+7. Generate analytics dashboards for real-time monitoring
+
+For student participants:
+1. Register and login securely
+2. Access study modules
+3. Complete immediate and delayed assessments
+4. Respond to NASA-TLX surveys
+5. View their performance results
+
+The platform is designed to support rigorous research methodologies while
+maintaining user privacy, data security, and comprehensive audit trails.
+
+================================================================================
+END OF COMPLETE SOURCE CODE DOCUMENTATION
+================================================================================
+
+For research questions or further details:
+Contact: aodion2021@gmail.com
+Project: FocusLearn - E-Learning Research Platform
+Version: 1.0.0
+Date: 2026
