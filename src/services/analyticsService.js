@@ -26,7 +26,28 @@ class AnalyticsService {
   }
 
   async assignGroups(userIds, group) {
-    await User.updateMany({ _id: { $in: userIds } }, { group });
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+      throw new Error('At least one participant is required.');
+    }
+
+    const targetGroup = group?.toString().trim().toLowerCase();
+    if (!['control', 'experimental'].includes(targetGroup)) {
+      throw new Error('Invalid group selection.');
+    }
+
+    const [targetUsers, otherUsers] = await Promise.all([
+      User.find({ role: USER_ROLES.STUDENT, group: targetGroup }).lean(),
+      User.find({ role: USER_ROLES.STUDENT, group: { $ne: targetGroup } }).lean(),
+    ]);
+
+    const targetCount = targetUsers.length + userIds.length;
+    const otherCount = otherUsers.length - userIds.length;
+
+    if (targetCount < 5 || targetCount > 8 || otherCount < 5 || otherCount > 8) {
+      throw new Error(`Each group must contain between 5 and 8 participants. Current totals would be ${targetCount} in ${targetGroup} and ${otherCount} in the other group.`);
+    }
+
+    await User.updateMany({ _id: { $in: userIds } }, { group: targetGroup });
     return User.find({ _id: { $in: userIds } }).lean();
   }
 
